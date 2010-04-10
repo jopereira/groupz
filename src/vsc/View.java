@@ -24,13 +24,13 @@ public class View implements Runnable {
 	
 	private Messages messages;
 	private boolean awake;
+	private Receiver recv;
 	
-	private List<byte[]> queue=new LinkedList<byte[]>();
-
-	public View(String path, String me, ZooKeeper zk) throws KeeperException, InterruptedException {
+	public View(String path, String me, Receiver cb, ZooKeeper zk) throws KeeperException, InterruptedException {
 		this.zk=zk;
 		this.path=path;
 		this.me=me;
+		this.recv=cb;
 	}
 	
 	public synchronized void wakeup() {
@@ -106,8 +106,7 @@ public class View implements Runnable {
 	
 	private void install() {
 		System.out.println("================ VIEW "+me+" "+members);
-		queue.add(members.toString().getBytes());
-		notifyAll();
+		recv.install(vid, members.processes().toArray(new String[members.processes().size()]));
 	}
 	
 	private void boot() throws KeeperException, InterruptedException {
@@ -193,14 +192,8 @@ public class View implements Runnable {
 		}
 	}
 	
-	public synchronized byte[] receive() throws InterruptedException {
-		while(queue.isEmpty())
-			wait();
-		return queue.remove(0);
-	}
-
 	public void enqueue(byte[] value) {
-		queue.add(value);
+		recv.receive(value);
 	}	
 
 }
