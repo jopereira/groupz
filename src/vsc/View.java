@@ -2,8 +2,6 @@ package vsc;
 
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
 import java.util.Set;
 
 import org.apache.zookeeper.CreateMode;
@@ -23,7 +21,7 @@ public class View implements Runnable {
 	private ProcessList members, future;
 	
 	private Messages messages;
-	private boolean awake;
+	private boolean awake, blocked;
 	private Receiver recv;
 	
 	public View(String path, String me, Receiver cb, ZooKeeper zk) throws KeeperException, InterruptedException {
@@ -40,20 +38,27 @@ public class View implements Runnable {
 	
 	public void tryLeave() throws KeeperException, InterruptedException {
 		//System.out.println("leaving? "+me+" ol="+oldleaving+" l="+leaving+" a="+active+" e="+entering+" m="+members+" f="+future);
-		if (future==null && (oldleaving==null || oldleaving.processSet().isEmpty()) &&
+		if (!blocked &&
+				future==null && (oldleaving==null || oldleaving.processSet().isEmpty()) &&
 				members.isKnown() && (	
 				active.processSet().size()<members.processes().size() ||
 				!leaving.processSet().isEmpty() ||
 				!entering.processSet().isEmpty())
 			) {
-			
+			blocked=true;
+			recv.block();
 			System.out.println("---------------- Decided to leave --------- "+me+" "+oldleaving+" "+leaving+" "+active+" "+entering+" "+members+" "+future);
-
-			leaving.create(messages.getLast());
-			active.remove();
-			
-			future = new ProcessList(path+"/"+(vid+1), this);
 		}
+	}
+		
+	public void blockOk() throws KeeperException, InterruptedException {
+		if (!blocked)
+			return;
+		blocked=false;
+		leaving.create(messages.getLast());
+		active.remove();
+			
+		future = new ProcessList(path+"/"+(vid+1), this);
 	}
 	
 	public void tryEnter() throws KeeperException, InterruptedException {
@@ -163,7 +168,9 @@ public class View implements Runnable {
 			leaving.remove();
 	}
 	
-	public synchronized void send(byte[] data) throws KeeperException, InterruptedException {
+	public synchronized void send(byte[] data) throws Exception {
+		if (future!=null)
+			throw new Exception("sending while blocked");
 		messages.send(data);
 	}
 	
