@@ -17,7 +17,6 @@ public class Messages implements Watcher {
 		this.path=path+"/messages";
 
 		create();
-		update();
 	}
 
 	private void create() throws KeeperException, InterruptedException {
@@ -31,14 +30,13 @@ public class Messages implements Watcher {
 	@Override
 	public void process(WatchedEvent event) {
 		try {
-			update();
+			view.wakeup();
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 	}
 
-	private void update() throws NumberFormatException, KeeperException, InterruptedException {
-		int before=last;
+	public synchronized void xupdate() throws NumberFormatException, KeeperException, InterruptedException {
 		for(String child: view.zk.getChildren(path, this)) {
 			int id=Integer.parseInt(child.substring(1));
 			if (id>last) {
@@ -47,19 +45,13 @@ public class Messages implements Watcher {
 				last++;
 			}
 		}
-		if (last>before)
-			changed();
-	}
-	
-	private void changed() {
-		view.wakeup();
 	}
 	
 	public void send(byte[] data) throws KeeperException, InterruptedException {
 		view.zk.create(path+"/m", data, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
 	}
 	
-	public int getLast() {
+	public synchronized int getLast() {
 		return last;
 	}
 }

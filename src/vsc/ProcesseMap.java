@@ -25,7 +25,7 @@ public class ProcesseMap implements Watcher {
 		try {
 			view.zk.create(path, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 		} catch(KeeperException.NodeExistsException e) {
-			
+			// don't care
 		}
 		update();
 	}
@@ -33,13 +33,13 @@ public class ProcesseMap implements Watcher {
 	@Override
 	public void process(WatchedEvent event) {
 		try {
-			update();
+			view.wakeup();
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 	}
 	
-	private void update() throws KeeperException, InterruptedException {
+	private synchronized void update() throws KeeperException, InterruptedException {
 		Map<String,Integer> newdata=new HashMap<String, Integer>();
 		for(String child: view.zk.getChildren(path, this)) {
 			try {
@@ -49,39 +49,30 @@ public class ProcesseMap implements Watcher {
 				// Ignore this one...
 			}
 		}
-		if (data==null || !data.equals(newdata)) {
+		if (data==null || !data.equals(newdata))
 			data=newdata;
-			changed();
-		}
 	}
 	
-	protected void changed() {
-		view.wakeup();
-	}
-	
-	public void create(int value) throws KeeperException, InterruptedException {
+	public synchronized void create(int value) throws KeeperException, InterruptedException {
 		view.zk.create(path+"/"+me, Integer.toString(value).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
-		data.put(me, value);
 	}
 	
-	public void set(int value) throws KeeperException, InterruptedException {
+	public synchronized void set(int value) throws KeeperException, InterruptedException {
 		update();
 		if (value<=data.get(me))
 			return;
 		view.zk.setData(path+"/"+me, Integer.toString(value).getBytes(), -1);		
-		data.put(me, value);
 	}
 
-	public void remove() throws InterruptedException, KeeperException {
+	public synchronized void remove() throws InterruptedException, KeeperException {
 		try {
 			view.zk.delete(path+"/"+me, -1);
-			data.remove(me);
 		} catch(KeeperException.NoNodeException e) {
 			// don't care
 		}
 	}
 	
-	public int get() throws KeeperException, InterruptedException {
+	public synchronized int get() throws KeeperException, InterruptedException {
 		update();
 		int min=Integer.MAX_VALUE;
 		for(int i: data.values()) {
@@ -91,7 +82,7 @@ public class ProcesseMap implements Watcher {
 		return min;
 	}
 	
-	public Set<String> processSet() throws KeeperException, InterruptedException {
+	public synchronized Set<String> processSet() throws KeeperException, InterruptedException {
 		update();
 		return data.keySet();
 	}

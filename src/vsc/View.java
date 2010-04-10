@@ -1,5 +1,6 @@
 package vsc;
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -24,19 +25,14 @@ public class View implements Runnable {
 	private boolean awake, blocked;
 	private Receiver recv;
 	
-	public View(String path, String me, Receiver cb, ZooKeeper zk) throws KeeperException, InterruptedException {
-		this.zk=zk;
+	public View(String path, String me, Receiver cb) throws KeeperException, InterruptedException, IOException {
+		this.zk=new ZooKeeper("localhost", 3000, null);
 		this.path=path;
 		this.me=me;
 		this.recv=cb;
 	}
-	
-	public synchronized void wakeup() {
-		awake=true;
-		notifyAll();
-	}
-	
-	public void tryLeave() throws KeeperException, InterruptedException {
+		
+	private void tryLeave() throws KeeperException, InterruptedException {
 		//System.out.println("leaving? "+me+" ol="+oldleaving+" l="+leaving+" a="+active+" e="+entering+" m="+members+" f="+future);
 		if (!blocked &&
 				future==null && (oldleaving==null || oldleaving.processSet().isEmpty()) &&
@@ -51,7 +47,7 @@ public class View implements Runnable {
 		}
 	}
 		
-	public void blockOk() throws KeeperException, InterruptedException {
+	public synchronized void blockOk() throws KeeperException, InterruptedException {
 		if (!blocked)
 			return;
 		blocked=false;
@@ -61,7 +57,7 @@ public class View implements Runnable {
 		future = new ProcessList(path+"/"+(vid+1), this);
 	}
 	
-	public void tryEnter() throws KeeperException, InterruptedException {
+	private void tryEnter() throws KeeperException, InterruptedException {
 		//System.out.println("entering? "+me+" "+oldleaving+" "+leaving+" "+active+" "+entering+" "+members+" "+future);
 		if (future!=null &&
 			!future.isKnown() &&
@@ -78,7 +74,7 @@ public class View implements Runnable {
 		}
 	}
 
-	public void tryInstall() throws Exception {
+	private void tryInstall() throws Exception {
 		//System.out.println("installing? "+me+" "+oldleaving+" "+leaving+" "+active+" "+entering+" "+members+" "+future);
 
 		if (future!=null && future.isKnown() && (messages==null || leaving.get()>=messages.getLast())) {
@@ -114,6 +110,20 @@ public class View implements Runnable {
 		recv.install(vid, members.processes().toArray(new String[members.processes().size()]));
 	}
 	
+	private void tryAck() throws KeeperException, InterruptedException {
+		if (messages!=null) {
+			messages.xupdate();
+			if (future==null)
+				active.set(messages.getLast());
+			else
+				leaving.set(messages.getLast());
+		}
+	}
+	
+	public void enqueue(byte[] value) {
+		recv.receive(value);
+	}	
+
 	private void boot() throws KeeperException, InterruptedException {
 		vid=0;
 		
@@ -162,10 +172,7 @@ public class View implements Runnable {
 	}
 	
 	public synchronized void leave() throws InterruptedException, KeeperException {
-		if (future==null)
-			active.remove();
-		else
-			leaving.remove();
+		zk.close();
 	}
 	
 	public synchronized void send(byte[] data) throws Exception {
@@ -190,17 +197,8 @@ public class View implements Runnable {
 		}
 	}
 
-	private void tryAck() throws KeeperException, InterruptedException {
-		if (messages!=null) {
-			if (future==null)
-				active.set(messages.getLast());
-			else
-				leaving.set(messages.getLast());
-		}
+	public synchronized void wakeup() {
+		awake=true;
+		notifyAll();
 	}
-	
-	public void enqueue(byte[] value) {
-		recv.receive(value);
-	}	
-
 }

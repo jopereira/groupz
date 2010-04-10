@@ -40,23 +40,19 @@ public class ProcessList implements Watcher {
 	}
 
 	private void update() throws KeeperException, InterruptedException {
-		if (data!=null)
-			return;
-		try {
-			byte[] value=view.zk.getData(path, this, null);
-			String[] procs = new String(value).split(",");
-			data = Arrays.asList(procs);
-			changed();
-		} catch (KeeperException.NoNodeException e) {
-			// not yet
+		synchronized (this) {
+			try {
+				byte[] value=view.zk.getData(path, this, null);
+				String[] procs = new String(value).split(",");
+				data = Arrays.asList(procs);
+			} catch (KeeperException.NoNodeException e) {
+				// not yet
+			}
 		}
-	}
-	
-	private void changed() {
 		view.wakeup();
 	}
-
-	public List<String> processes() {
+	
+	public synchronized List<String> processes() {
 		return data;
 	}
 	
@@ -64,7 +60,7 @@ public class ProcessList implements Watcher {
 		return "["+path+": "+data+"]";
 	}
 
-	public boolean isKnown() {
+	public synchronized boolean isKnown() {
 		return data!=null;
 	}
 
