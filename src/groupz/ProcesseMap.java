@@ -1,4 +1,4 @@
-package vsc;
+package groupz;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -10,14 +10,14 @@ import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs.Ids;
 
-public class ProcesseMap implements Watcher {
-	protected View view;
+class ProcesseMap implements Watcher {
+	protected Group view;
 	private String path;
 	
 	private Map<String,Integer> data;
 	private String me;
 
-	public ProcesseMap(String path, String me, View view) throws KeeperException, InterruptedException {
+	public ProcesseMap(String path, String me, Group view) throws KeeperException, InterruptedException {
 		this.view=view;
 		this.path=path;
 		this.me=me;

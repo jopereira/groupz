@@ -1,4 +1,4 @@
-package vsc;
+package groupz;
 
 public interface Receiver {
 	public void receive(byte[] data);

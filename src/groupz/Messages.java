@@ -1,4 +1,4 @@
-package vsc;
+package groupz;
 
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
@@ -6,13 +6,13 @@ import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs.Ids;
 
-public class Messages implements Watcher {
-	private View view;
+class Messages implements Watcher {
+	private Group view;
 	private String path;
 	
 	private int last=-1;
 	
-	public Messages(String path, String me, View view) throws KeeperException, InterruptedException {
+	public Messages(String path, String me, Group view) throws KeeperException, InterruptedException {
 		this.view=view;
 		this.path=path+"/messages";
 

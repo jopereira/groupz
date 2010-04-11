@@ -1,4 +1,4 @@
-package vsc;
+package groupz;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -10,13 +10,13 @@ import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs.Ids;
 
-public class ProcessList implements Watcher {
-	private View view;
+class ProcessList implements Watcher {
+	private Group view;
 	private String path;
 	
 	private List<String> data;
 	
-	public ProcessList(String path, View view) throws KeeperException, InterruptedException {
+	public ProcessList(String path, Group view) throws KeeperException, InterruptedException {
 		this.view=view;
 		this.path=path;
 		
