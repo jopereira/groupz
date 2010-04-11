@@ -62,7 +62,7 @@ public class Group implements Runnable {
 		if (future!=null &&
 			!future.isKnown() &&
 			active.processSet().isEmpty() &&
-			(messages==null || blocked.get()>=messages.getLast())) {
+			(messages==null || getStability()>=messages.getLast())) {
 			
 			System.out.println("---------------- Decided to enter --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members);
 			
@@ -92,7 +92,7 @@ public class Group implements Runnable {
 				members = future;
 				future = null;
 				messages = new Messages(path+"/"+vid, me, this);
-				active.create(0);
+				active.create(-1);
 			} else {
 				messages = null;
 				throw new Exception("kicket out");
@@ -110,9 +110,15 @@ public class Group implements Runnable {
 		recv.install(vid, members.processes().toArray(new String[members.processes().size()]));
 	}
 	
+	private int getStability() throws KeeperException, InterruptedException {
+		int lowa=active.get();
+		int lowb=blocked.get();
+		return lowa<lowb?lowa:lowb;
+	}
+	
 	private void tryAck() throws KeeperException, InterruptedException {
 		if (messages!=null) {
-			messages.xupdate();
+			messages.update(getStability());
 			if (future==null)
 				active.set(messages.getLast());
 			else
@@ -149,7 +155,7 @@ public class Group implements Runnable {
 		entering = new ProcesseMap(path+"/"+vid+"/entering", me, this);
 		messages = new Messages(path+"/"+vid, me, this);
 		
-		active.create(0);
+		active.create(-1);
 		
 		install();
 	}

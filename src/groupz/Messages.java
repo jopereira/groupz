@@ -1,5 +1,8 @@
 package groupz;
 
+import java.util.SortedSet;
+import java.util.TreeSet;
+
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
@@ -36,19 +39,27 @@ class Messages implements Watcher {
 		}
 	}
 
-	public synchronized void xupdate() throws NumberFormatException, KeeperException, InterruptedException {
-		for(String child: view.zk.getChildren(path, this)) {
-			int id=Integer.parseInt(child.substring(1));
+	public synchronized void update(int low) throws NumberFormatException, KeeperException, InterruptedException {
+		SortedSet<String> childs=new TreeSet<String>();
+		childs.addAll(view.zk.getChildren(path, this));
+		for(String child: childs) {
+			int id=Integer.parseInt(child);
 			if (id>last) {
 				byte[] value=view.zk.getData(path+"/"+child, null, null);
 				view.enqueue(value);
-				last++;
+				last=id;
+			} else if (id<=low){
+				try {
+					view.zk.delete(path+"/"+child, -1);
+				} catch(KeeperException.NoNodeException e) {
+					// someone got there first...
+				}
 			}
 		}
 	}
 	
 	public void send(byte[] data) throws KeeperException, InterruptedException {
-		view.zk.create(path+"/m", data, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+		view.zk.create(path+"/", data, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
 	}
 	
 	public synchronized int getLast() {
