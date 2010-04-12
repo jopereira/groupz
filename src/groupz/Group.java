@@ -28,6 +28,7 @@ public class Group {
 	
 	private enum State { UNINITIALIZED, CONNECTED, JOINED, BLOCKING, BLOCKED, DISCONNECTED };
 	private State state = State.UNINITIALIZED;
+	private Exception cause;
 	
 	public Group(String gid, Receiver cb) throws GroupException {
 		try {
@@ -36,7 +37,7 @@ public class Group {
 			this.recv=cb;
 			this.state=State.CONNECTED;
 		} catch(Exception e) {
-			cleanup();
+			cleanup(e);
 			throw new GroupException("cannot connect to ZooKeeper", e);
 		}
 	}
@@ -57,6 +58,8 @@ public class Group {
 				recv.block();
 			} catch(GroupException e) {
 				// let it fall through
+			} catch(Exception e) {
+				cleanup(e);
 			}
 		}
 	}
@@ -117,7 +120,7 @@ public class Group {
 				state = State.JOINED;
 			} else {
 				messages = null;
-				cleanup();
+				cleanup(null);
 			}
 
 			if (oldblocked!=null)
@@ -136,6 +139,8 @@ public class Group {
 				recv.install(vid, null);
 		} catch(GroupException e) {
 			// let it fall through
+		} catch(Exception e) {
+			cleanup(e);
 		}
 	}
 	
@@ -146,6 +151,9 @@ public class Group {
 	}
 	
 	private void tryAck() throws KeeperException, InterruptedException {
+		if (state!=State.JOINED && state!=State.BLOCKING && state!=State.BLOCKED)
+			return;
+			
 		if (messages!=null) {
 			List<byte[]> values=messages.update(getStability());
 			try {
@@ -157,6 +165,8 @@ public class Group {
 					blocked.set(messages.getLast());
 			} catch(GroupException e) {
 				// let it fall through
+			} catch(Exception e) {
+				cleanup(e);
 			}
 		}
 	}
@@ -210,9 +220,10 @@ public class Group {
 		System.out.println(">>>>>>>> I AM "+me);
 	}
 	
-	private synchronized void cleanup() {
+	private synchronized void cleanup(Exception cause) {
 		if (state==State.DISCONNECTED)
 			return;
+		this.cause=cause;
 		state=State.DISCONNECTED;
 		try {
 			zk.close();
@@ -232,12 +243,15 @@ public class Group {
 				rl=req.toString();
 			else
 				rl+=" or "+req;
-		cleanup();
-		throw new GroupException("the group is "+state+", should be "+rl);
+		cleanup(null);
+		if (cause!=null)
+			throw new GroupException("the group is "+state+", should be "+rl, cause);
+		else
+			throw new GroupException("the group is "+state+", should be "+rl);
 	}
 
 	private void onExit(Exception e) throws GroupException  {
-		cleanup();
+		cleanup(e);
 		throw new GroupException("disconnected on internal error", e);
 	}
 	
@@ -271,7 +285,7 @@ public class Group {
 	}
 	
 	public synchronized void leave() {
-		cleanup();
+		cleanup(null);
 	}
 	
 	public synchronized void send(byte[] data) throws GroupException {
@@ -300,7 +314,7 @@ public class Group {
 				tryEnter();
 			}
 		} catch(Exception e) {
-			cleanup();
+			cleanup(e);
 		}
 	}
 
