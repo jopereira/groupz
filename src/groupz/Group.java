@@ -1,6 +1,5 @@
 package groupz;
 
-import java.io.IOException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -10,7 +9,7 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.ZooDefs.Ids;
 
-public class Group implements Runnable {
+public class Group {
 	ZooKeeper zk;
 	private static final String root="/vsc";
 	private String path;
@@ -26,10 +25,19 @@ public class Group implements Runnable {
 	private boolean awake, blocking;
 	private Receiver recv;
 	
-	public Group(String gid, Receiver cb) throws KeeperException, InterruptedException, IOException {
-		this.zk=new ZooKeeper("localhost", 3000, null);
-		this.path=root+"/group/"+gid;
-		this.recv=cb;
+	private enum State { UNINITIALIZED, CONNECTED, JOINED, BLOCKING, BLOCKED, DISCONNECTED };
+	private State state = State.UNINITIALIZED;
+	
+	public Group(String gid, Receiver cb) throws GroupException {
+		try {
+			this.zk=new ZooKeeper("localhost", 3000, null);
+			this.path=root+"/group/"+gid;
+			this.recv=cb;
+			this.state=State.CONNECTED;
+		} catch(Exception e) {
+			cleanup();
+			throw new GroupException("cannot connect to ZooKeeper", e);
+		}
 	}
 		
 	private void tryLeave() throws KeeperException, InterruptedException {
@@ -42,19 +50,27 @@ public class Group implements Runnable {
 				!entering.processSet().isEmpty())
 			) {
 			blocking=true;
+			state = State.BLOCKING;
 			recv.block();
 			System.out.println("---------------- Decided to leave --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
 		}
 	}
 		
-	public synchronized void blockOk() throws KeeperException, InterruptedException {
-		if (!blocking)
-			return;
-		blocking=false;
-		blocked.create(messages.getLast());
-		active.remove();
-			
-		future = new ProcessList(path+"/"+(vid+1), this);
+	public synchronized void blockOk() throws GroupException {
+		onEntry(State.BLOCKING);
+
+		try {
+			state = State.BLOCKED;
+			blocking=false;
+			blocked.create(messages.getLast());
+			active.remove();
+				
+			future = new ProcessList(path+"/"+(vid+1), this);
+		} catch(KeeperException e) {
+			onExit(e);
+		} catch (InterruptedException e) {
+			onExit(e);
+		}
 	}
 	
 	private void tryEnter() throws KeeperException, InterruptedException {
@@ -93,9 +109,10 @@ public class Group implements Runnable {
 				future = null;
 				messages = new Messages(path+"/"+vid, me, this);
 				active.create(-1);
+				state = State.JOINED;
 			} else {
 				messages = null;
-				throw new Exception("kicket out");
+				cleanup();
 			}
 
 			if (oldblocked!=null)
@@ -107,7 +124,10 @@ public class Group implements Runnable {
 	
 	private void install() {
 		System.out.println("================ VIEW "+me+" "+members);
-		recv.install(vid, members.processes().toArray(new String[members.processes().size()]));
+		if (state==State.JOINED)
+			recv.install(vid, members.processes().toArray(new String[members.processes().size()]));
+		else
+			recv.install(vid, null);
 	}
 	
 	private int getStability() throws KeeperException, InterruptedException {
@@ -126,7 +146,7 @@ public class Group implements Runnable {
 		}
 	}
 	
-	public void enqueue(byte[] value) {
+	void enqueue(byte[] value) {
 		recv.receive(value);
 	}	
 
@@ -179,40 +199,89 @@ public class Group implements Runnable {
 		System.out.println(">>>>>>>> I AM "+me);
 	}
 	
-	/* FIXME: This is fraught with races... */
-	public synchronized void join() throws KeeperException, InterruptedException {
-		findView();
-		if (vid<0)
-			boot();
-		else {
-			findPid();
-
-			entering = new ProcesseMap(path+"/"+vid+"/entering", me, this);
-			blocked = new ProcesseMap(path+"/"+vid+"/blocked", me, this);
-			active = new ProcesseMap(path+"/"+vid+"/active", me, this);
-			future = new ProcessList(path+"/"+(vid+1), this);
-			entering.create(-1);
+	private synchronized void cleanup() {
+		if (state==State.DISCONNECTED)
+			return;
+		state=State.DISCONNECTED;
+		try {
+			zk.close();
+		} catch (InterruptedException e) {
+			// don't care
 		}
-		new Thread(this).start();
-		while(members==null || !members.isKnown())
-			wait();
+		wakeup();
 	}
 	
-	public synchronized void leave() throws InterruptedException, KeeperException {
-		zk.close();
+	private void onEntry(State... reqs) throws GroupException  {
+		for(State req: reqs)
+			if (req==state)
+				return;
+		String rl=null;
+		for(State req: reqs)
+			if (rl==null)
+				rl=req.toString();
+			else
+				rl+=" or "+req;
+		cleanup();
+		throw new GroupException("the group is "+state+", should be "+rl);
+	}
+
+	private void onExit(Exception e) throws GroupException  {
+		cleanup();
+		throw new GroupException("disconnected on internal error", e);
 	}
 	
-	public synchronized void send(byte[] data) throws Exception {
-		if (future!=null)
-			throw new Exception("sending while blocked");
-		messages.send(data);
+	/* FIXME: This is fraught with races... */
+	public synchronized void join() throws GroupException {
+		onEntry(State.CONNECTED);
+		
+		try {
+			findView();
+			if (vid<0)
+				boot();
+			else {
+				findPid();
+	
+				entering = new ProcesseMap(path+"/"+vid+"/entering", me, this);
+				blocked = new ProcesseMap(path+"/"+vid+"/blocked", me, this);
+				active = new ProcesseMap(path+"/"+vid+"/active", me, this);
+				future = new ProcessList(path+"/"+(vid+1), this);
+				entering.create(-1);
+			}
+			new Thread(new Runnable() {
+				public void run() {
+					mainLoop();
+				}
+			}).start();
+			while(members==null || !members.isKnown())
+				wait();
+		} catch(Exception e) {
+			onExit(e);
+		}
 	}
 	
-	public synchronized void run() {
+	public synchronized void leave() {
+		cleanup();
+	}
+	
+	public synchronized void send(byte[] data) throws GroupException {
+		onEntry(State.JOINED, State.BLOCKING);
+		
+		try {
+			messages.send(data);
+		} catch (KeeperException e) {
+			onExit(e);
+		} catch (InterruptedException e) {
+			onExit(e);
+		}
+	}
+	
+	private synchronized void mainLoop() {
 		try {
 			while(true) {
 				while(!awake)
 					wait();
+				if (state==State.DISCONNECTED)
+					break;
 				awake=false;
 				tryAck();
 				tryLeave();
@@ -220,11 +289,11 @@ public class Group implements Runnable {
 				tryEnter();
 			}
 		} catch(Exception e) {
-			e.printStackTrace();
+			cleanup();
 		}
 	}
 
-	public synchronized void wakeup() {
+	synchronized void wakeup() {
 		awake=true;
 		notifyAll();
 	}
