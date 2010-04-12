@@ -1,5 +1,7 @@
 package groupz;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
@@ -39,14 +41,15 @@ class Messages implements Watcher {
 		}
 	}
 
-	public synchronized void update(int low) throws NumberFormatException, KeeperException, InterruptedException {
+	public synchronized List<byte[]> update(int low) throws NumberFormatException, KeeperException, InterruptedException {
+		List<byte[]> data=new ArrayList<byte[]>();
 		SortedSet<String> childs=new TreeSet<String>();
 		childs.addAll(view.zk.getChildren(path, this));
 		for(String child: childs) {
 			int id=Integer.parseInt(child);
 			if (id>last) {
 				byte[] value=view.zk.getData(path+"/"+child, null, null);
-				view.enqueue(value);
+				data.add(value);
 				last=id;
 			} else if (id<=low){
 				try {
@@ -56,6 +59,7 @@ class Messages implements Watcher {
 				}
 			}
 		}
+		return data;
 	}
 	
 	public void send(byte[] data) throws KeeperException, InterruptedException {

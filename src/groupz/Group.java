@@ -2,6 +2,7 @@ package groupz;
 
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.apache.zookeeper.CreateMode;
@@ -51,8 +52,12 @@ public class Group {
 			) {
 			blocking=true;
 			state = State.BLOCKING;
-			recv.block();
 			System.out.println("---------------- Decided to leave --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
+			try {
+				recv.block();
+			} catch(GroupException e) {
+				// let it fall through
+			}
 		}
 	}
 		
@@ -124,10 +129,14 @@ public class Group {
 	
 	private void install() {
 		System.out.println("================ VIEW "+me+" "+members);
-		if (state==State.JOINED)
-			recv.install(vid, members.processes().toArray(new String[members.processes().size()]));
-		else
-			recv.install(vid, null);
+		try {
+			if (state==State.JOINED)
+				recv.install(vid, members.processes().toArray(new String[members.processes().size()]));
+			else
+				recv.install(vid, null);
+		} catch(GroupException e) {
+			// let it fall through
+		}
 	}
 	
 	private int getStability() throws KeeperException, InterruptedException {
@@ -138,18 +147,20 @@ public class Group {
 	
 	private void tryAck() throws KeeperException, InterruptedException {
 		if (messages!=null) {
-			messages.update(getStability());
-			if (future==null)
-				active.set(messages.getLast());
-			else
-				blocked.set(messages.getLast());
+			List<byte[]> values=messages.update(getStability());
+			try {
+				for(byte[] value: values)
+					recv.receive(value);
+				if (future==null)
+					active.set(messages.getLast());
+				else
+					blocked.set(messages.getLast());
+			} catch(GroupException e) {
+				// let it fall through
+			}
 		}
 	}
 	
-	void enqueue(byte[] value) {
-		recv.receive(value);
-	}	
-
 	private void createPath(String path) throws KeeperException, InterruptedException {
 		try {
 			zk.create(path, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
@@ -278,7 +289,7 @@ public class Group {
 	private synchronized void mainLoop() {
 		try {
 			while(true) {
-				while(!awake)
+				while(!awake && state!=State.DISCONNECTED)
 					wait();
 				if (state==State.DISCONNECTED)
 					break;

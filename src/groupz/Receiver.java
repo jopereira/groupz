@@ -1,7 +1,7 @@
 package groupz;
 
 public interface Receiver {
-	public void receive(byte[] data);
-	public void install(int vid, String[] members);
-	public void block();
+	public void receive(byte[] data) throws GroupException;
+	public void install(int vid, String[] members) throws GroupException;
+	public void block() throws GroupException;
 }
