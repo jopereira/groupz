@@ -1,11 +1,18 @@
 package groupz;
 
+/**
+ * Group communication exception. Any exception within the group
+ * communication protocol or the application callbacks removes
+ * the process from the view.
+ * 
+ * @author jop
+ */
 public class GroupException extends Exception {
-	public GroupException(String message) {
+	GroupException(String message) {
 		super(message);
 	}
 
-	public GroupException(String message, Throwable cause) {
+	GroupException(String message, Throwable cause) {
 		super(message, cause);
 	}
 

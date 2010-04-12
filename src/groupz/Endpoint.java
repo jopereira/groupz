@@ -10,7 +10,13 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.ZooDefs.Ids;
 
-public class Group {
+/**
+ * Group communication end-point. It provides virtually synchronous closed
+ * group communication, including view synchrony and totally ordered multicast.
+ *  
+ * @author jop
+ */
+public class Endpoint {
 	ZooKeeper zk;
 	private static final String root="/vsc";
 	private String path;
@@ -24,13 +30,20 @@ public class Group {
 	
 	private Messages messages;
 	private boolean awake, blocking;
-	private Receiver recv;
+	private Application recv;
 	
 	private enum State { UNINITIALIZED, CONNECTED, JOINED, BLOCKING, BLOCKED, DISCONNECTED };
 	private State state = State.UNINITIALIZED;
 	private Exception cause;
-	
-	public Group(String gid, Receiver cb) throws GroupException {
+
+	/**
+	 * Initialize a group communication end-point.
+	 * 
+	 * @param gid a group identifier
+	 * @param cb application callbacks
+	 * @throws GroupException if a local ZooKeeper server cannot be used
+	 */
+	public Endpoint(String gid, Application cb) throws GroupException {
 		try {
 			this.zk=new ZooKeeper("localhost", 3000, null);
 			this.path=root+"/group/"+gid;
@@ -64,6 +77,13 @@ public class Group {
 		}
 	}
 		
+	/**
+	 * Allow view change to proceed, after the block() callback has
+	 * been invoked. This means that the application cannot send more
+	 * messages until a new view has been installed. 
+	 * 
+	 * @throws GroupException if the group is not trying to block
+	 */
 	public synchronized void blockOk() throws GroupException {
 		onEntry(State.BLOCKING);
 
@@ -255,7 +275,14 @@ public class Group {
 		throw new GroupException("disconnected on internal error", e);
 	}
 	
-	/* FIXME: This is fraught with races... */
+	///* FIXME: This is fraught with races... */
+	
+	/**
+	 * Join the group. This blocks the calling thread until an initial view is
+	 * installed.
+	 * 
+	 * @throws GroupException if the end-point is not freshly created.
+	 */
 	public synchronized void join() throws GroupException {
 		onEntry(State.CONNECTED);
 		
@@ -284,10 +311,19 @@ public class Group {
 		}
 	}
 	
+	/**
+	 * Leave the group. The end-point cannot be used again.
+	 */
 	public synchronized void leave() {
 		cleanup(null);
 	}
 	
+	/**
+	 * Send a message. This cannot be invoked after blockOk() has been called
+	 * until a new view is installed.
+	 * 
+	 * @throws GroupException if the end-point is not freshly created.
+	 */
 	public synchronized void send(byte[] data) throws GroupException {
 		onEntry(State.JOINED, State.BLOCKING);
 		
@@ -298,6 +334,29 @@ public class Group {
 		} catch (InterruptedException e) {
 			onExit(e);
 		}
+	}
+
+	/**
+	 * Get a unique identifier of the local process.
+	 * 
+	 * @return the identification of the local process
+	 * @throws GroupException if no view is installed
+	 */
+	public synchronized String getProcessId() throws GroupException {
+		onEntry(State.JOINED, State.BLOCKING, State.BLOCKED);		
+		return me;
+	}
+	
+	/**
+	 * Get the current composition of the view. This is guaranteed to 
+	 * be exactly the same in all members.
+	 * 
+	 * @return the list of group members
+	 * @throws GroupException if no view is installed
+	 */
+	public synchronized String[] getCurrentView() throws GroupException {
+		onEntry(State.JOINED, State.BLOCKING, State.BLOCKED);
+		return members.processes().toArray(new String[members.processes().size()]);		
 	}
 	
 	private synchronized void mainLoop() {

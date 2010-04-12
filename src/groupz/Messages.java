@@ -12,12 +12,12 @@ import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs.Ids;
 
 class Messages implements Watcher {
-	private Group view;
+	private Endpoint view;
 	private String path;
 	
 	private int last=-1;
 	
-	public Messages(String path, String me, Group view) throws KeeperException, InterruptedException {
+	public Messages(String path, String me, Endpoint view) throws KeeperException, InterruptedException {
 		this.view=view;
 		this.path=path+"/messages";
 

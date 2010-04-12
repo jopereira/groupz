@@ -11,12 +11,12 @@ import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs.Ids;
 
 class ProcessList implements Watcher {
-	private Group view;
+	private Endpoint view;
 	private String path;
 	
 	private List<String> data;
 	
-	public ProcessList(String path, Group view) throws KeeperException, InterruptedException {
+	public ProcessList(String path, Endpoint view) throws KeeperException, InterruptedException {
 		this.view=view;
 		this.path=path;
 		
