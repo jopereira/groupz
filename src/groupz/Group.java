@@ -53,7 +53,7 @@ public class Group {
 			) {
 			blocking=true;
 			state = State.BLOCKING;
-			System.out.println("---------------- Decided to leave --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
+			//System.out.println("---------------- Decided to leave --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
 			try {
 				recv.block();
 			} catch(GroupException e) {
@@ -88,7 +88,7 @@ public class Group {
 			active.processSet().isEmpty() &&
 			(messages==null || getStability()>=messages.getLast())) {
 			
-			System.out.println("---------------- Decided to enter --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members);
+			//System.out.println("---------------- Decided to enter --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members);
 			
 			Set<String> prop=new HashSet<String>();
 			prop.addAll(blocked.processSet());
@@ -102,7 +102,7 @@ public class Group {
 		//System.out.println("installing? "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
 
 		if (future!=null && future.isKnown() && (messages==null || blocked.get()>=messages.getLast())) {
-			System.out.println("---------------- Decided to install --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
+			//System.out.println("---------------- Decided to install --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
 			
 			vid ++;
 
@@ -131,7 +131,7 @@ public class Group {
 	}
 	
 	private void install() {
-		System.out.println("================ VIEW "+me+" "+members);
+		//System.out.println("================ VIEW "+me+" "+members);
 		try {
 			if (state==State.JOINED)
 				recv.install(vid, members.processes().toArray(new String[members.processes().size()]));
@@ -217,7 +217,7 @@ public class Group {
 	private void findPid() throws KeeperException, InterruptedException {
 		String[] path = zk.create(root+"/process/", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL).split("/");
 		me = path[path.length-1];
-		System.out.println(">>>>>>>> I AM "+me);
+		//System.out.println(">>>>>>>> I AM "+me);
 	}
 	
 	private synchronized void cleanup(Exception cause) {
