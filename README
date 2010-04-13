@@ -1,0 +1,9 @@
+Simple group communication protocol built on ZooKeeper, implementing
+the traditional virtually synchronous group communication model. This
+includes view synchrony with sending view delivery and totally ordered
+multicast.
+
+To install, just add groupz.jar, zookeeper-x.x.x.jar and log4j.jar. A
+ZooKeeper server running of each host is required. See
+http://hadoop.apache.org/zookeeper/ for download and installation
+instructions.
