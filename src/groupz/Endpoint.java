@@ -1,9 +1,8 @@
 package groupz;
 
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
@@ -110,7 +109,7 @@ public class Endpoint {
 			
 			//System.out.println("---------------- Decided to enter --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members);
 			
-			Set<String> prop=new HashSet<String>();
+			List<String> prop=new ArrayList<String>();
 			prop.addAll(blocked.processSet());
 			prop.addAll(entering.processSet());
 			
@@ -210,7 +209,7 @@ public class Endpoint {
 		findPid();
 
 		members = new ProcessList(path+"/"+vid, this);
-		members.propose(Collections.singleton(me));
+		members.propose(Collections.singletonList(me));
 		active = new ProcessMap(path+"/"+vid+"/active", me, this);
 		blocked = new ProcessMap(path+"/"+vid+"/blocked", me, this);
 		entering = new ProcessMap(path+"/"+vid+"/entering", me, this);

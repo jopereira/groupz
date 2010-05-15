@@ -1,7 +1,6 @@
 package groupz;
 
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
 
 import org.apache.zookeeper.CreateMode;
@@ -24,7 +23,7 @@ class ProcessList implements Watcher {
 			update();
 	}
 
-	public void propose(Collection<String> mine) throws KeeperException, InterruptedException {
+	public void propose(List<String> mine) throws KeeperException, InterruptedException {
 		String value=null;
 		for(String v: mine)
 			if (value==null)
