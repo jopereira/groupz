@@ -10,14 +10,14 @@ import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs.Ids;
 
-class ProcesseMap implements Watcher {
+class ProcessMap implements Watcher {
 	protected Endpoint view;
 	private String path;
 	
 	private Map<String,Integer> data;
 	private String me;
 
-	public ProcesseMap(String path, String me, Endpoint view) throws KeeperException, InterruptedException {
+	public ProcessMap(String path, String me, Endpoint view) throws KeeperException, InterruptedException {
 		this.view=view;
 		this.path=path;
 		this.me=me;

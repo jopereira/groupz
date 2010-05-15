@@ -23,9 +23,9 @@ public class Endpoint {
 	private String me;
 
 	private int vid;
-	private ProcesseMap active;
-	private ProcesseMap blocked, oldblocked;
-	private ProcesseMap entering;
+	private ProcessMap active;
+	private ProcessMap blocked, oldblocked;
+	private ProcessMap entering;
 	private ProcessList members, future;
 	
 	private Messages messages;
@@ -128,9 +128,9 @@ public class Endpoint {
 
 			oldblocked=blocked;
 
-			active = new ProcesseMap(path+"/"+vid+"/active", me, this);
-			entering = new ProcesseMap(path+"/"+vid+"/entering", me, this);
-			blocked = new ProcesseMap(path+"/"+vid+"/blocked", me, this);
+			active = new ProcessMap(path+"/"+vid+"/active", me, this);
+			entering = new ProcessMap(path+"/"+vid+"/entering", me, this);
+			blocked = new ProcessMap(path+"/"+vid+"/blocked", me, this);
 			
 			if (future.processes().contains(me)) {
 				members = future;
@@ -211,9 +211,9 @@ public class Endpoint {
 
 		members = new ProcessList(path+"/"+vid, this);
 		members.propose(Collections.singleton(me));
-		active = new ProcesseMap(path+"/"+vid+"/active", me, this);
-		blocked = new ProcesseMap(path+"/"+vid+"/blocked", me, this);
-		entering = new ProcesseMap(path+"/"+vid+"/entering", me, this);
+		active = new ProcessMap(path+"/"+vid+"/active", me, this);
+		blocked = new ProcessMap(path+"/"+vid+"/blocked", me, this);
+		entering = new ProcessMap(path+"/"+vid+"/entering", me, this);
 		messages = new Messages(path+"/"+vid, me, this);
 		
 		active.create(-1);
@@ -293,9 +293,9 @@ public class Endpoint {
 			else {
 				findPid();
 	
-				entering = new ProcesseMap(path+"/"+vid+"/entering", me, this);
-				blocked = new ProcesseMap(path+"/"+vid+"/blocked", me, this);
-				active = new ProcesseMap(path+"/"+vid+"/active", me, this);
+				entering = new ProcessMap(path+"/"+vid+"/entering", me, this);
+				blocked = new ProcessMap(path+"/"+vid+"/blocked", me, this);
+				active = new ProcessMap(path+"/"+vid+"/active", me, this);
 				future = new ProcessList(path+"/"+(vid+1), this);
 				entering.create(-1);
 			}
