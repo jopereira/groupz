@@ -28,7 +28,7 @@ public class Endpoint {
 	private ProcessList members, future;
 	
 	private Messages messages;
-	private boolean awake, blocking;
+	private boolean awake;
 	private Application recv;
 	
 	private enum State { UNINITIALIZED, CONNECTED, JOINED, BLOCKING, BLOCKED, DISCONNECTED };
@@ -57,17 +57,13 @@ public class Endpoint {
 	private void tryLeave() throws KeeperException, InterruptedException, GroupException {
 		//System.out.println("blocked? "+me+" ol="+oldblocked+" l="+blocked+" a="+active+" e="+entering+" m="+members+" f="+future);
 		synchronized (this) {
-			if (!(!blocking &&
-					future==null && (oldblocked==null || oldblocked.processSet().isEmpty()) &&
-					members.isKnown() && (	
-							active.processSet().size()<members.processes().size() ||
-							!blocked.processSet().isEmpty() ||
-							!entering.processSet().isEmpty())
+			if (!(state==State.JOINED &&
+					(oldblocked==null || oldblocked.processSet().isEmpty()) &&
+					(active.processSet().size()<members.processes().size() || !entering.processSet().isEmpty())
 				))
 				return;
 			
 			
-			blocking=true;
 			state = State.BLOCKING;
 			//System.out.println("---------------- Decided to leave --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
 		}
@@ -88,7 +84,6 @@ public class Endpoint {
 
 		try {
 			state = State.BLOCKED;
-			blocking=false;
 			blocked.create(messages.getLast());
 			active.remove();
 				
@@ -102,8 +97,7 @@ public class Endpoint {
 	
 	private synchronized void tryEnter() throws KeeperException, InterruptedException {
 		//System.out.println("entering? "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
-		if (future!=null &&
-			!future.isKnown() &&
+		if (state==State.BLOCKED &&
 			active.processSet().isEmpty() &&
 			(messages==null || getStability()>=messages.getLast())) {
 			
@@ -123,7 +117,7 @@ public class Endpoint {
 		String[] names=null; 
 		
 		synchronized (this) {
-			if (!(future!=null && future.isKnown() && (messages==null || blocked.get()>=messages.getLast())))
+			if (!(state==State.BLOCKED && future.isKnown() ))
 				return;
 			
 			//System.out.println("---------------- Decided to install --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
@@ -294,6 +288,8 @@ public class Endpoint {
 				active = new ProcessMap(path+"/"+vid+"/active", me, this);
 				future = new ProcessList(path+"/"+(vid+1), this);
 				entering.create(-1);
+				
+				state=State.BLOCKED;
 			}
 			new Thread(new Runnable() {
 				public void run() {
@@ -365,6 +361,8 @@ public class Endpoint {
 						break;
 					awake=false;
 				}
+				
+				// The following order shouldn't matter for correctness
 				tryAck();
 				tryLeave();
 				tryInstall();
