@@ -54,7 +54,7 @@ public class Endpoint {
 		}
 	}
 		
-	private void tryLeave() throws KeeperException, InterruptedException {
+	private void tryLeave() throws KeeperException, InterruptedException, GroupException {
 		//System.out.println("blocked? "+me+" ol="+oldblocked+" l="+blocked+" a="+active+" e="+entering+" m="+members+" f="+future);
 		synchronized (this) {
 			if (!(!blocking &&
@@ -71,20 +71,11 @@ public class Endpoint {
 			state = State.BLOCKING;
 			//System.out.println("---------------- Decided to leave --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
 		}
+		
 		// Callback out of synchronized!
-		callBlock();
+		recv.block();
 	}
 
-	private void callBlock() {
-		try {
-			recv.block();
-		} catch(GroupException e) {
-			// let it fall through
-		} catch(Exception e) {
-			cleanup(e);
-		}
-	}
-	
 	/**
 	 * Allow view change to proceed, after the block() callback has
 	 * been invoked. This means that the application cannot send more
@@ -163,27 +154,16 @@ public class Endpoint {
 		}
 		
 		// Call install out of synchronized
-		callInstall(vid, names);
+		recv.install(vid, names);
 	}
-	
-	private synchronized void callInstall(int v, String[] names) {
-		//System.out.println("================ VIEW "+me+" "+members);
-		try {
-			recv.install(v, names);
-		} catch(GroupException e) {
-			// let it fall through
-		} catch(Exception e) {
-			cleanup(e);
-		}
-	}
-	
+		
 	private int getStability() throws KeeperException, InterruptedException {
 		int lowa=active.get();
 		int lowb=blocked.get();
 		return lowa<lowb?lowa:lowb;
 	}
 	
-	private void tryAck() throws KeeperException, InterruptedException {
+	private void tryAck() throws KeeperException, InterruptedException, GroupException {
 		List<byte[]> values;
 		
 		synchronized (this) {
@@ -196,16 +176,8 @@ public class Endpoint {
 			values=messages.update(getStability());
 		}
 		
-		try {
-			for(byte[] value: values)
-				recv.receive(value);
-		} catch(GroupException e) {
-			// let it fall through
-			return;
-		} catch(Exception e) {
-			cleanup(e);
-			return;
-		}
+		for(byte[] value: values)
+			recv.receive(value);
 		
 		synchronized (this) {
 			if (future==null)
@@ -241,8 +213,8 @@ public class Endpoint {
 		messages = new Messages(path+"/"+vid, me, this);
 		
 		active.create(-1);
-		
-		callInstall(vid, getCurrentView());
+
+		recv.install(vid, getCurrentView());
 	}
 	
 	private void findView() {
