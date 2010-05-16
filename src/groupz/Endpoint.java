@@ -183,24 +183,35 @@ public class Endpoint {
 		return lowa<lowb?lowa:lowb;
 	}
 	
-	private synchronized void tryAck() throws KeeperException, InterruptedException {
-		if (state!=State.JOINED && state!=State.BLOCKING && state!=State.BLOCKED)
-			return;
+	private void tryAck() throws KeeperException, InterruptedException {
+		List<byte[]> values;
+		
+		synchronized (this) {
+			if (state!=State.JOINED && state!=State.BLOCKING && state!=State.BLOCKED)
+				return;
+		
+			if (messages==null)
+				return;
 			
-		if (messages!=null) {
-			List<byte[]> values=messages.update(getStability());
-			try {
-				for(byte[] value: values)
-					recv.receive(value);
-				if (future==null)
-					active.set(messages.getLast());
-				else
-					blocked.set(messages.getLast());
-			} catch(GroupException e) {
-				// let it fall through
-			} catch(Exception e) {
-				cleanup(e);
-			}
+			values=messages.update(getStability());
+		}
+		
+		try {
+			for(byte[] value: values)
+				recv.receive(value);
+		} catch(GroupException e) {
+			// let it fall through
+			return;
+		} catch(Exception e) {
+			cleanup(e);
+			return;
+		}
+		
+		synchronized (this) {
+			if (future==null)
+				active.set(messages.getLast());
+			else
+				blocked.set(messages.getLast());
 		}
 	}
 	
