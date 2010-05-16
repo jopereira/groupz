@@ -34,8 +34,8 @@ public class Endpoint {
 	private boolean awake;
 	private Application recv;
 	
-	private enum State { UNINITIALIZED, CONNECTED, JOINED, BLOCKING, BLOCKED, DISCONNECTED };
-	private State state = State.UNINITIALIZED;
+	private enum State { CONNECTED, JOINED, BLOCKING, BLOCKED, DISCONNECTED };
+	private State state;
 	private Exception cause;
 
 	/**
@@ -58,14 +58,20 @@ public class Endpoint {
 			throw ge;
 		}
 	}
+
+	/* -- Main VSC state-machine */
+	
+	// Pre-condition for start changing a view
+	private boolean readyToBlock() throws KeeperException, InterruptedException {
+		return state==State.JOINED &&
+			(oldblocked==null || oldblocked.processSet().isEmpty()) &&
+			(active.processSet().size()<members.processes().size() || !entering.processSet().isEmpty());
+	}
 		
-	private void tryLeave() throws KeeperException, InterruptedException, GroupException {
+	// Output action to start changing a view
+	private void block() throws KeeperException, InterruptedException, GroupException {
 		synchronized (this) {
-			if (!(state==State.JOINED &&
-					(oldblocked==null || oldblocked.processSet().isEmpty()) &&
-					(active.processSet().size()<members.processes().size() || !entering.processSet().isEmpty())
-				))
-				return;
+			if (!readyToBlock()) return;
 			
 			state = State.BLOCKING;
 
@@ -75,7 +81,7 @@ public class Endpoint {
 		// Callback out of synchronized!
 		recv.block();
 	}
-
+	
 	/**
 	 * Allow view change to proceed, after the block() callback has
 	 * been invoked. This means that the application cannot send more
@@ -100,28 +106,25 @@ public class Endpoint {
 			onExit(e);
 		}
 	}
+
+	// Pre-condition for installing a new view
+	private boolean readyToInstall() throws KeeperException, InterruptedException {
+		return state==State.BLOCKED && active.processSet().isEmpty() &&
+			(messages==null || getLastStableMessage()>=messages.getLast());
+	}
 	
-	private synchronized void tryEnter() throws KeeperException, InterruptedException {
-		if (state==State.BLOCKED &&
-			active.processSet().isEmpty() &&
-			(messages==null || getStability()>=messages.getLast())) {
-			
-			logger.info("proposing next view");
-			
+	// Output action for installing a view
+	private synchronized void install() throws KeeperException, InterruptedException, GroupException {
+		String[] names=null; 
+
+		synchronized (this) {
+			if (!readyToInstall()) return;
+						
 			List<String> prop=new ArrayList<String>();
 			prop.addAll(blocked.processSet());
 			prop.addAll(entering.processSet());
 			
 			future.propose(prop);		
-		}
-	}
-
-	private synchronized void tryInstall() throws Exception {
-		String[] names=null; 
-		
-		synchronized (this) {
-			if (!(state==State.BLOCKED && future.isKnown() ))
-				return;
 			
 			vid ++;
 
@@ -153,38 +156,7 @@ public class Endpoint {
 		recv.install(vid, names);
 	}
 		
-	private int getStability() throws KeeperException, InterruptedException {
-		int lowa=active.get();
-		int lowb=blocked.get();
-		return lowa<lowb?lowa:lowb;
-	}
-	
-	private void tryAck() throws KeeperException, InterruptedException, GroupException {
-		List<byte[]> values;
-		
-		synchronized (this) {
-			if (state!=State.JOINED && state!=State.BLOCKING && state!=State.BLOCKED)
-				return;
-		
-			if (messages==null)
-				return;
-			
-			values=messages.update(getStability());
-		}
-
-		if (values.size()>0)
-			logger.info("delivering "+values.size()+" messages");
-
-		for(byte[] value: values)
-			recv.receive(value);
-		
-		synchronized (this) {
-			if (future==null)
-				active.set(messages.getLast());
-			else
-				blocked.set(messages.getLast());
-		}
-	}
+	/* -- Joining and leaving a group */
 	
 	private void createPath(String path) throws KeeperException, InterruptedException {
 		try {
@@ -194,6 +166,12 @@ public class Endpoint {
 		}
 	}
 	
+	private void findPid() throws KeeperException, InterruptedException {
+		String[] path = zk.create(root+"/process/", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL).split("/");
+		me = path[path.length-1];
+		logger.info("my process id is "+me);
+	}
+			
 	private void boot() throws KeeperException, InterruptedException, GroupException {
 		vid=0;
 
@@ -231,49 +209,6 @@ public class Endpoint {
 		}
 	}
 
-	private void findPid() throws KeeperException, InterruptedException {
-		String[] path = zk.create(root+"/process/", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL).split("/");
-		me = path[path.length-1];
-		logger.info("my process id is "+me);
-	}
-	
-	private synchronized void cleanup(Exception cause) {
-		if (state==State.DISCONNECTED)
-			return;
-		this.cause=cause;
-		state=State.DISCONNECTED;
-		if (cause!=null)
-			logger.error("detached from group on error", cause);
-		else
-			logger.info("detached from group on leave");
-		try {
-			zk.close();
-		} catch (InterruptedException e) {
-			// don't care
-		}
-		wakeup();
-	}
-	
-	private void onEntry(State... reqs) throws GroupException  {
-		for(State req: reqs)
-			if (req==state)
-				return;
-		String rl=null;
-		for(State req: reqs)
-			if (rl==null)
-				rl=req.toString();
-			else
-				rl+=" or "+req;
-		GroupException e=new GroupException("the group is "+state+", should be "+rl, cause);
-		cleanup(e);
-		throw e;
-	}
-
-	private void onExit(Exception e) throws GroupException  {
-		cleanup(e);
-		throw new GroupException("disconnected on internal error", e);
-	}
-	
 	/**
 	 * Join the group. This blocks the calling thread until an initial view is
 	 * installed.
@@ -303,7 +238,7 @@ public class Endpoint {
 
 			new Thread(new Runnable() {
 				public void run() {
-					mainLoop();
+					loop();
 				}
 			}).start();
 			while((members==null || !members.isKnown()) && state!=State.DISCONNECTED)
@@ -315,12 +250,50 @@ public class Endpoint {
 		if (state==State.DISCONNECTED)
 			throw new GroupException("failed to join", cause);
 	}
-	
+
 	/**
 	 * Leave the group. The end-point cannot be used again.
 	 */
 	public synchronized void leave() {
 		cleanup(null);
+	}
+
+	/* -- Message handling */
+	
+	private int getLastStableMessage() throws KeeperException, InterruptedException {
+		int lowa=active.get();
+		int lowb=blocked.get();
+		return lowa<lowb?lowa:lowb;
+	}
+
+	// Pre-condition for delivering messages
+	private boolean readyToDeliver() {
+		return (state==State.JOINED || state==State.BLOCKING || state==State.BLOCKED) &&
+			messages!=null;
+	}
+	
+	// Action for delivering messages
+	private void deliver() throws KeeperException, InterruptedException, GroupException {
+		List<byte[]> values;
+		
+		synchronized (this) {
+			if (!readyToDeliver()) return;
+			
+			values=messages.update(getLastStableMessage());
+		}
+
+		if (values.size()>0)
+			logger.info("delivering "+values.size()+" messages");
+
+		for(byte[] value: values)
+			recv.receive(value);
+		
+		synchronized (this) {
+			if (future==null)
+				active.set(messages.getLast());
+			else
+				blocked.set(messages.getLast());
+		}
 	}
 	
 	/**
@@ -340,7 +313,9 @@ public class Endpoint {
 			onExit(e);
 		}
 	}
-
+	
+	/* -- The rest of the public API -- */
+	
 	/**
 	 * Get a unique identifier of the local process.
 	 * 
@@ -368,8 +343,49 @@ public class Endpoint {
 			return null; // never happens, onExit always throws
 		}
 	}
+
+	/* -- Error handling -- */
 	
-	private void mainLoop() {
+	private void onEntry(State... reqs) throws GroupException  {
+		for(State req: reqs)
+			if (req==state)
+				return;
+		String rl=null;
+		for(State req: reqs)
+			if (rl==null)
+				rl=req.toString();
+			else
+				rl+=" or "+req;
+		GroupException e=new GroupException("the group is "+state+", should be "+rl, cause);
+		cleanup(e);
+		throw e;
+	}
+
+	private void onExit(Exception e) throws GroupException  {
+		cleanup(e);
+		throw new GroupException("disconnected on internal error", e);
+	}
+
+	private synchronized void cleanup(Exception cause) {
+		if (state==State.DISCONNECTED)
+			return;
+		this.cause=cause;
+		state=State.DISCONNECTED;
+		if (cause!=null)
+			logger.error("detached from group on error", cause);
+		else
+			logger.info("detached from group on leave");
+		try {
+			zk.close();
+		} catch (InterruptedException e) {
+			// don't care
+		}
+		wakeup();
+	}
+		
+	/* -- State-machine main loop -- */
+	
+	private void loop() {
 		try {
 			while(true) {
 				synchronized (this) {
@@ -381,10 +397,9 @@ public class Endpoint {
 				}
 				
 				// The following order shouldn't matter for correctness
-				tryAck();
-				tryLeave();
-				tryInstall();
-				tryEnter();
+				deliver();
+				block();
+				install();
 			}
 		} catch(Exception e) {
 			cleanup(e);
