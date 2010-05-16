@@ -1,9 +1,20 @@
-Simple group communication protocol built on ZooKeeper, implementing
-the traditional virtually synchronous group communication model. This
-includes view synchrony with sending view delivery and totally ordered
-multicast.
+Groupz is a simple group communication protocol built on ZooKeeper, implementing
+the traditional virtually synchronous group communication model. This includes
+view synchrony with sending view delivery and totally ordered multicast.
 
-To install, just add groupz.jar, zookeeper-x.x.x.jar and log4j.jar. A
-ZooKeeper server running of each host is required. See
+Using Groupz in production is not recommended: Please use ZooKeeper directly.
+Regard Groupz just as (i) an exercise on how the good old virtual synchrony maps
+to the new abstraction and (maybe) how to program with ZooKeeper; (ii) a toolkit
+whose API is very simple and directly matches the theoretical literature, for use in
+classes and labs. It is currently being used with both these purposes at the U. Minho. 
+
+To compile, just add zookeeper-x.x.x.jar and log4j.jar to the CLASSPATH and javac
+everything. Source code is available at http://gitorious.org/groupz/.
+
+To use, just add zookeeper-x.x.x.jar, log4j.jar, and the resulting compiled
+classes to the CLASSPATH. A ZooKeeper server running of each host is required. See
 http://hadoop.apache.org/zookeeper/ for download and installation
 instructions.
+
+See NOTICE and LICENSE for copyright, usage, and distribution details. But again...
+you probably want to use plain ZooKeeper directly. :-) 
