@@ -34,11 +34,7 @@ class Messages implements Watcher {
 
 	@Override
 	public void process(WatchedEvent event) {
-		try {
-			view.wakeup();
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+		view.wakeup();
 	}
 
 	public synchronized List<byte[]> update(int low) throws NumberFormatException, KeeperException, InterruptedException {

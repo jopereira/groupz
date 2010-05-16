@@ -32,11 +32,7 @@ class ProcessMap implements Watcher {
 
 	@Override
 	public void process(WatchedEvent event) {
-		try {
-			view.wakeup();
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+		view.wakeup();
 	}
 	
 	private synchronized void update() throws KeeperException, InterruptedException {

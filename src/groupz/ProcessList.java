@@ -48,27 +48,26 @@ class ProcessList implements Watcher {
 				// not yet
 			}
 		}
-		view.wakeup();
 	}
 	
-	public synchronized List<String> processes() {
+	public synchronized List<String> processes() throws KeeperException, InterruptedException {
+		if (data==null)
+			update();
 		return data;
 	}
 	
-	public String toString() {
-		return "["+path+": "+data+"]";
-	}
-
-	public synchronized boolean isKnown() {
+	public synchronized boolean isKnown() throws KeeperException, InterruptedException {
+		if (data==null)
+			update();
 		return data!=null;
 	}
 
 	@Override
 	public void process(WatchedEvent event) {
-		try {
-			update();
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+		view.wakeup();
+	}
+
+	public String toString() {
+		return "["+path+": "+data+"]";
 	}
 }
