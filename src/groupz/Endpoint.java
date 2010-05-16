@@ -207,6 +207,8 @@ public class Endpoint {
 		
 		active.create(-1);
 
+		state=State.JOINED;
+
 		recv.install(vid, getCurrentView());
 
 		logger.info("new group created");
