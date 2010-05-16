@@ -1,5 +1,7 @@
 package groupz;
 
+import java.io.IOException;
+
 /**
  * Group communication exception. Any exception within the group
  * communication protocol or the application callbacks removes
@@ -7,11 +9,7 @@ package groupz;
  * 
  * @author jop
  */
-public class GroupException extends Exception {
-	GroupException(String message) {
-		super(message);
-	}
-
+public class GroupException extends IOException {
 	GroupException(String message, Throwable cause) {
 		super(message, cause);
 	}

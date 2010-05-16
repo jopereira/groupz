@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.apache.log4j.Logger;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
@@ -16,6 +17,8 @@ import org.apache.zookeeper.ZooDefs.Ids;
  * @author jop
  */
 public class Endpoint {
+	static Logger logger = Logger.getLogger(Endpoint.class);
+	
 	ZooKeeper zk;
 	private static final String root="/vsc";
 	private String path;
@@ -48,14 +51,15 @@ public class Endpoint {
 			this.path=root+"/group/"+gid;
 			this.recv=cb;
 			this.state=State.CONNECTED;
+			logger.info("created endpoint on group "+gid);
 		} catch(Exception e) {
-			cleanup(e);
-			throw new GroupException("cannot connect to ZooKeeper", e);
+			GroupException ge=new GroupException("cannot connect to ZooKeeper", e);
+			cleanup(ge);
+			throw ge;
 		}
 	}
 		
 	private void tryLeave() throws KeeperException, InterruptedException, GroupException {
-		//System.out.println("blocked? "+me+" ol="+oldblocked+" l="+blocked+" a="+active+" e="+entering+" m="+members+" f="+future);
 		synchronized (this) {
 			if (!(state==State.JOINED &&
 					(oldblocked==null || oldblocked.processSet().isEmpty()) &&
@@ -63,9 +67,9 @@ public class Endpoint {
 				))
 				return;
 			
-			
 			state = State.BLOCKING;
-			//System.out.println("---------------- Decided to leave --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
+
+			logger.info("leaving view "+vid);
 		}
 		
 		// Callback out of synchronized!
@@ -88,6 +92,8 @@ public class Endpoint {
 			active.remove();
 				
 			future = new ProcessList(path+"/"+(vid+1), this);
+
+			logger.info("blocked on view "+vid);
 		} catch(KeeperException e) {
 			onExit(e);
 		} catch (InterruptedException e) {
@@ -96,12 +102,11 @@ public class Endpoint {
 	}
 	
 	private synchronized void tryEnter() throws KeeperException, InterruptedException {
-		//System.out.println("entering? "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
 		if (state==State.BLOCKED &&
 			active.processSet().isEmpty() &&
 			(messages==null || getStability()>=messages.getLast())) {
 			
-			//System.out.println("---------------- Decided to enter --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members);
+			logger.info("proposing next view");
 			
 			List<String> prop=new ArrayList<String>();
 			prop.addAll(blocked.processSet());
@@ -112,15 +117,11 @@ public class Endpoint {
 	}
 
 	private synchronized void tryInstall() throws Exception {
-		//System.out.println("installing? "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
-		
 		String[] names=null; 
 		
 		synchronized (this) {
 			if (!(state==State.BLOCKED && future.isKnown() ))
 				return;
-			
-			//System.out.println("---------------- Decided to install --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
 			
 			vid ++;
 
@@ -145,6 +146,7 @@ public class Endpoint {
 			if (oldblocked!=null)
 				oldblocked.remove();
 		
+			logger.info("installing view "+vid);
 		}
 		
 		// Call install out of synchronized
@@ -169,7 +171,10 @@ public class Endpoint {
 			
 			values=messages.update(getStability());
 		}
-		
+
+		if (values.size()>0)
+			logger.info("delivering "+values.size()+" messages");
+
 		for(byte[] value: values)
 			recv.receive(value);
 		
@@ -185,7 +190,7 @@ public class Endpoint {
 		try {
 			zk.create(path, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 		} catch(KeeperException.NodeExistsException e) {
-			// already exists
+			// already exists, don't care
 		}
 	}
 	
@@ -209,6 +214,8 @@ public class Endpoint {
 		active.create(-1);
 
 		recv.install(vid, getCurrentView());
+
+		logger.info("new group created");
 	}
 	
 	private void findView() {
@@ -227,7 +234,7 @@ public class Endpoint {
 	private void findPid() throws KeeperException, InterruptedException {
 		String[] path = zk.create(root+"/process/", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL).split("/");
 		me = path[path.length-1];
-		//System.out.println(">>>>>>>> I AM "+me);
+		logger.info("my process id is "+me);
 	}
 	
 	private synchronized void cleanup(Exception cause) {
@@ -235,6 +242,10 @@ public class Endpoint {
 			return;
 		this.cause=cause;
 		state=State.DISCONNECTED;
+		if (cause!=null)
+			logger.error("detached from group on error", cause);
+		else
+			logger.info("detached from group on leave");
 		try {
 			zk.close();
 		} catch (InterruptedException e) {
@@ -253,19 +264,15 @@ public class Endpoint {
 				rl=req.toString();
 			else
 				rl+=" or "+req;
-		cleanup(null);
-		if (cause!=null)
-			throw new GroupException("the group is "+state+", should be "+rl, cause);
-		else
-			throw new GroupException("the group is "+state+", should be "+rl);
+		GroupException e=new GroupException("the group is "+state+", should be "+rl, cause);
+		cleanup(e);
+		throw e;
 	}
 
 	private void onExit(Exception e) throws GroupException  {
 		cleanup(e);
 		throw new GroupException("disconnected on internal error", e);
 	}
-	
-	///* FIXME: This is fraught with races... */
 	
 	/**
 	 * Join the group. This blocks the calling thread until an initial view is
@@ -290,17 +297,23 @@ public class Endpoint {
 				entering.create(-1);
 				
 				state=State.BLOCKED;
+				
+				logger.info("joining existing group");
 			}
+
 			new Thread(new Runnable() {
 				public void run() {
 					mainLoop();
 				}
 			}).start();
-			while(members==null || !members.isKnown())
+			while((members==null || !members.isKnown()) && state!=State.DISCONNECTED)
 				wait();
 		} catch(Exception e) {
 			onExit(e);
 		}
+
+		if (state==State.DISCONNECTED)
+			throw new GroupException("failed to join", cause);
 	}
 	
 	/**
@@ -348,7 +361,12 @@ public class Endpoint {
 	 */
 	public synchronized String[] getCurrentView() throws GroupException {
 		onEntry(State.JOINED, State.BLOCKING, State.BLOCKED);
-		return members.processes().toArray(new String[members.processes().size()]);		
+		try {
+			return members.processes().toArray(new String[members.processes().size()]);
+		} catch(Exception e) {
+			onExit(e);
+			return null; // never happens, onExit always throws
+		}
 	}
 	
 	private void mainLoop() {
