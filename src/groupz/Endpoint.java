@@ -56,26 +56,35 @@ public class Endpoint {
 		
 	private void tryLeave() throws KeeperException, InterruptedException {
 		//System.out.println("blocked? "+me+" ol="+oldblocked+" l="+blocked+" a="+active+" e="+entering+" m="+members+" f="+future);
-		if (!blocking &&
-				future==null && (oldblocked==null || oldblocked.processSet().isEmpty()) &&
-				members.isKnown() && (	
-				active.processSet().size()<members.processes().size() ||
-				!blocked.processSet().isEmpty() ||
-				!entering.processSet().isEmpty())
-			) {
+		synchronized (this) {
+			if (!(!blocking &&
+					future==null && (oldblocked==null || oldblocked.processSet().isEmpty()) &&
+					members.isKnown() && (	
+							active.processSet().size()<members.processes().size() ||
+							!blocked.processSet().isEmpty() ||
+							!entering.processSet().isEmpty())
+				))
+				return;
+			
+			
 			blocking=true;
 			state = State.BLOCKING;
 			//System.out.println("---------------- Decided to leave --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
-			try {
-				recv.block();
-			} catch(GroupException e) {
-				// let it fall through
-			} catch(Exception e) {
-				cleanup(e);
-			}
+		}
+		// Callback out of synchronized!
+		callBlock();
+	}
+
+	private void callBlock() {
+		try {
+			recv.block();
+		} catch(GroupException e) {
+			// let it fall through
+		} catch(Exception e) {
+			cleanup(e);
 		}
 	}
-		
+	
 	/**
 	 * Allow view change to proceed, after the block() callback has
 	 * been invoked. This means that the application cannot send more
@@ -100,7 +109,7 @@ public class Endpoint {
 		}
 	}
 	
-	private void tryEnter() throws KeeperException, InterruptedException {
+	private synchronized void tryEnter() throws KeeperException, InterruptedException {
 		//System.out.println("entering? "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
 		if (future!=null &&
 			!future.isKnown() &&
@@ -117,10 +126,15 @@ public class Endpoint {
 		}
 	}
 
-	private void tryInstall() throws Exception {
+	private synchronized void tryInstall() throws Exception {
 		//System.out.println("installing? "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
-
-		if (future!=null && future.isKnown() && (messages==null || blocked.get()>=messages.getLast())) {
+		
+		String[] names=null; 
+		
+		synchronized (this) {
+			if (!(future!=null && future.isKnown() && (messages==null || blocked.get()>=messages.getLast())))
+				return;
+			
 			//System.out.println("---------------- Decided to install --------- "+me+" "+oldblocked+" "+blocked+" "+active+" "+entering+" "+members+" "+future);
 			
 			vid ++;
@@ -137,6 +151,7 @@ public class Endpoint {
 				messages = new Messages(path+"/"+vid, me, this);
 				active.create(-1);
 				state = State.JOINED;
+				names = getCurrentView();
 			} else {
 				messages = null;
 				cleanup(null);
@@ -145,17 +160,16 @@ public class Endpoint {
 			if (oldblocked!=null)
 				oldblocked.remove();
 		
-			install();
 		}
+		
+		// Call install out of synchronized
+		callInstall(vid, names);
 	}
 	
-	private void install() {
+	private synchronized void callInstall(int v, String[] names) {
 		//System.out.println("================ VIEW "+me+" "+members);
 		try {
-			if (state==State.JOINED)
-				recv.install(vid, members.processes().toArray(new String[members.processes().size()]));
-			else
-				recv.install(vid, null);
+			recv.install(v, names);
 		} catch(GroupException e) {
 			// let it fall through
 		} catch(Exception e) {
@@ -169,7 +183,7 @@ public class Endpoint {
 		return lowa<lowb?lowa:lowb;
 	}
 	
-	private void tryAck() throws KeeperException, InterruptedException {
+	private synchronized void tryAck() throws KeeperException, InterruptedException {
 		if (state!=State.JOINED && state!=State.BLOCKING && state!=State.BLOCKED)
 			return;
 			
@@ -198,7 +212,7 @@ public class Endpoint {
 		}
 	}
 	
-	private void boot() throws KeeperException, InterruptedException {
+	private void boot() throws KeeperException, InterruptedException, GroupException {
 		vid=0;
 
 		createPath(root);
@@ -217,7 +231,7 @@ public class Endpoint {
 		
 		active.create(-1);
 		
-		install();
+		callInstall(vid, getCurrentView());
 	}
 	
 	private void findView() {
@@ -358,14 +372,16 @@ public class Endpoint {
 		return members.processes().toArray(new String[members.processes().size()]);		
 	}
 	
-	private synchronized void mainLoop() {
+	private void mainLoop() {
 		try {
 			while(true) {
-				while(!awake && state!=State.DISCONNECTED)
-					wait();
-				if (state==State.DISCONNECTED)
-					break;
-				awake=false;
+				synchronized (this) {
+					while(!awake && state!=State.DISCONNECTED)
+						wait();
+					if (state==State.DISCONNECTED)
+						break;
+					awake=false;
+				}
 				tryAck();
 				tryLeave();
 				tryInstall();
