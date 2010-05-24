@@ -137,7 +137,11 @@ public class Endpoint {
 			if (!readyToInstall()) return;
 						
 			List<String> prop=new ArrayList<String>();
-			prop.addAll(blocked.processSet());
+			// Respect order in previous view
+			for(String s: members.processes())
+				if (blocked.processSet().contains(s))
+					prop.add(s);
+			// Arriving processes in any order
 			prop.addAll(entering.processSet());
 			
 			future.propose(prop);		
@@ -214,7 +218,7 @@ public class Endpoint {
 		logger.info("new group created");
 	}
 	
-	private void findView() {
+	private int findView() {
 		vid=-1;
 		try {
 			for(String svid: zk.getChildren(path, false)) {
@@ -225,6 +229,7 @@ public class Endpoint {
 		} catch (Exception e) {
 			// not ready
 		}
+		return vid;
 	}
 
 	/**
@@ -235,14 +240,15 @@ public class Endpoint {
 	 */
 	public synchronized void join() throws GroupException {
 		onEntry(State.CONNECTED);
-		
+				
 		try {
-			findView();
+			int targetvid=findView();
 			if (vid<0)
 				boot();
 			else {
 				findPid();
-	
+
+				members = new ProcessList(path+"/"+vid, this);
 				entering = new ProcessMap(path+"/"+vid+"/entering", me, this);
 				blocked = new ProcessMap(path+"/"+vid+"/blocked", me, this);
 				active = new ProcessMap(path+"/"+vid+"/active", me, this);
@@ -259,7 +265,7 @@ public class Endpoint {
 					loop();
 				}
 			}).start();
-			while((members==null || !members.isKnown()) && state!=State.DISCONNECTED)
+			while(vid<=targetvid && state!=State.DISCONNECTED)
 				wait();
 		} catch(Exception e) {
 			onExit(e);
