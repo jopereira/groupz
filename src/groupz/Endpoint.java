@@ -130,7 +130,7 @@ public class Endpoint {
 	}
 	
 	// Output action for installing a view
-	private synchronized void install() throws KeeperException, InterruptedException, GroupException {
+	private void install() throws KeeperException, InterruptedException, GroupException {
 		String[] names=null; 
 
 		synchronized (this) {
