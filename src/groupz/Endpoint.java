@@ -17,7 +17,6 @@
 package groupz;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 import org.apache.log4j.Logger;
@@ -199,21 +198,7 @@ public class Endpoint {
 		createPath(root+"/group");
 		createPath(root+"/process");
 		createPath(path);
-
-		findPid();
-
-		members = new ProcessList(path+"/"+vid, this);
-		members.propose(Collections.singletonList(me));
-		active = new ProcessMap(path+"/"+vid+"/active", me, this);
-		blocked = new ProcessMap(path+"/"+vid+"/blocked", me, this);
-		entering = new ProcessMap(path+"/"+vid+"/entering", me, this);
-		messages = new Messages(path+"/"+vid, me, this);
-		
-		active.create(-1);
-
-		state=State.JOINED;
-
-		recv.install(vid, getCurrentView());
+		createPath(path+"/0");
 
 		logger.info("new group created");
 	}
@@ -243,22 +228,22 @@ public class Endpoint {
 				
 		try {
 			int targetvid=findView();
+
 			if (vid<0)
 				boot();
-			else {
-				findPid();
+			
+			findPid();
 
-				members = new ProcessList(path+"/"+vid, this);
-				entering = new ProcessMap(path+"/"+vid+"/entering", me, this);
-				blocked = new ProcessMap(path+"/"+vid+"/blocked", me, this);
-				active = new ProcessMap(path+"/"+vid+"/active", me, this);
-				future = new ProcessList(path+"/"+(vid+1), this);
-				entering.create(-1);
+			members = new ProcessList(path+"/"+vid, this);
+			entering = new ProcessMap(path+"/"+vid+"/entering", me, this);
+			blocked = new ProcessMap(path+"/"+vid+"/blocked", me, this);
+			active = new ProcessMap(path+"/"+vid+"/active", me, this);
+			future = new ProcessList(path+"/"+(vid+1), this);
+			entering.create(-1);
 				
-				state=State.BLOCKED;
+			state=State.BLOCKED;
 				
-				logger.info("joining existing group");
-			}
+			logger.info("joining group");
 
 			new Thread(new Runnable() {
 				public void run() {
