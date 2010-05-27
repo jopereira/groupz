@@ -31,7 +31,8 @@ class Messages implements Watcher {
 	private Endpoint view;
 	private String path;
 	
-	private int last=-1;
+	private int lastSent=-1, lastRecv=-1, lastStable=-1;
+	private List<byte[]> data=new ArrayList<byte[]>();
 	
 	public Messages(String path, String me, Endpoint view) throws KeeperException, InterruptedException {
 		this.view=view;
@@ -53,17 +54,25 @@ class Messages implements Watcher {
 		view.wakeup();
 	}
 
-	public synchronized List<byte[]> update(int low) throws NumberFormatException, KeeperException, InterruptedException {
-		List<byte[]> data=new ArrayList<byte[]>();
+	public synchronized List<byte[]> receiveAndGC(int low) throws NumberFormatException, KeeperException, InterruptedException {
+		this.lastStable=low;
+		update();
+		List<byte[]> result=data;
+		lastRecv=lastSent;
+		data=new ArrayList<byte[]>();
+		return result;
+	}
+	
+	private void update() throws KeeperException, InterruptedException {
 		SortedSet<String> childs=new TreeSet<String>();
 		childs.addAll(view.zk.getChildren(path, this));
 		for(String child: childs) {
 			int id=Integer.parseInt(child);
-			if (id>last) {
+			if (id>lastSent) {
 				byte[] value=view.zk.getData(path+"/"+child, null, null);
 				data.add(value);
-				last=id;
-			} else if (id<=low){
+				lastSent=id;
+			} else if (id<=lastStable){
 				try {
 					view.zk.delete(path+"/"+child, -1);
 				} catch(KeeperException.NoNodeException e) {
@@ -71,14 +80,18 @@ class Messages implements Watcher {
 				}
 			}
 		}
-		return data;
 	}
 	
 	public void send(byte[] data) throws KeeperException, InterruptedException {
 		view.zk.create(path+"/", data, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
 	}
 	
-	public synchronized int getLast() {
-		return last;
+	public synchronized int getLastReceived() throws KeeperException, InterruptedException {
+		return lastRecv;
+	}
+	
+	public synchronized int getLastSent() throws KeeperException, InterruptedException {
+		update();
+		return lastSent;
 	}
 }

@@ -107,7 +107,7 @@ public class Endpoint {
 
 		try {
 			state = State.BLOCKED;
-			blocked.create(messages.getLast());
+			blocked.create(messages.getLastReceived());
 			active.remove();
 				
 			future = new ProcessList(path+"/"+(vid+1), this);
@@ -127,7 +127,7 @@ public class Endpoint {
 			((messages==null && getLastStableMessage()==Integer.MAX_VALUE) ||
 					
 			// If I was in the view, I know how many messages have been sent
-			 (messages!=null && getLastStableMessage()>=messages.getLast()));
+			 (messages!=null && getLastStableMessage()>=messages.getLastSent()));
 	}
 	
 	// Output action for installing a view
@@ -290,7 +290,7 @@ public class Endpoint {
 		synchronized (this) {
 			if (!readyToDeliver()) return;
 			
-			values=messages.update(getLastStableMessage());
+			values=messages.receiveAndGC(getLastStableMessage());
 		}
 
 		if (values.size()>0)
@@ -301,9 +301,9 @@ public class Endpoint {
 		
 		synchronized (this) {
 			if (future==null)
-				active.set(messages.getLast());
+				active.set(messages.getLastReceived());
 			else
-				blocked.set(messages.getLast());
+				blocked.set(messages.getLastReceived());
 		}
 	}
 	
@@ -407,10 +407,10 @@ public class Endpoint {
 					awake=false;
 				}
 				
-				// Currently this order matters for correctness!
+				// This order should not matter for correctness
 				block();
-				deliver();
 				install();
+				deliver();
 			}
 		} catch(Exception e) {
 			cleanup(e);
