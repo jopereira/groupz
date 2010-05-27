@@ -42,7 +42,6 @@ public class Endpoint {
 	private int vid;
 	private ProcessMap active;
 	private ProcessMap blocked, oldblocked;
-	private ProcessMap entering;
 	private ProcessList members, future;
 	
 	private Messages messages;
@@ -78,9 +77,8 @@ public class Endpoint {
 	
 	// Pre-condition for start changing a view
 	private boolean readyToBlock() throws KeeperException, InterruptedException {
-		return state==State.JOINED &&
-			(oldblocked==null || oldblocked.processSet().isEmpty()) &&
-			(active.processSet().size()<members.processes().size() || !entering.processSet().isEmpty());
+		return state==State.JOINED && oldblocked.processSet().isEmpty() &&
+			(active.processSet().size()<members.processes().size() || !blocked.processSet().isEmpty());
 	}
 		
 	// Output action to start changing a view
@@ -125,7 +123,11 @@ public class Endpoint {
 	// Pre-condition for installing a new view
 	private boolean readyToInstall() throws KeeperException, InterruptedException {
 		return state==State.BLOCKED && active.processSet().isEmpty() &&
-			(messages==null || getLastStableMessage()>=messages.getLast());
+			// A new process can only propose to change a dead view
+			((messages==null && getLastStableMessage()==Integer.MAX_VALUE) ||
+					
+			// If I was in the view, I know how many messages have been sent
+			 (messages!=null && getLastStableMessage()>=messages.getLast()));
 	}
 	
 	// Output action for installing a view
@@ -134,14 +136,16 @@ public class Endpoint {
 
 		synchronized (this) {
 			if (!readyToInstall()) return;
-						
+
 			List<String> prop=new ArrayList<String>();
 			// Respect order in previous view
 			for(String s: members.processes())
 				if (blocked.processSet().contains(s))
 					prop.add(s);
 			// Arriving processes in any order
-			prop.addAll(entering.processSet());
+			for(String s: blocked.processSet())
+				if (!members.processes().contains(s))
+					prop.add(s);
 			
 			future.propose(prop);		
 			
@@ -150,7 +154,6 @@ public class Endpoint {
 			oldblocked=blocked;
 
 			active = new ProcessMap(path+"/"+vid+"/active", me, this);
-			entering = new ProcessMap(path+"/"+vid+"/entering", me, this);
 			blocked = new ProcessMap(path+"/"+vid+"/blocked", me, this);
 			
 			if (future.processes().contains(me)) {
@@ -165,8 +168,7 @@ public class Endpoint {
 				cleanup(null);
 			}
 
-			if (oldblocked!=null)
-				oldblocked.remove();
+			oldblocked.remove();
 		
 			logger.info("installing view "+vid);
 		}
@@ -235,12 +237,12 @@ public class Endpoint {
 			findPid();
 
 			members = new ProcessList(path+"/"+vid, this);
-			entering = new ProcessMap(path+"/"+vid+"/entering", me, this);
 			blocked = new ProcessMap(path+"/"+vid+"/blocked", me, this);
 			active = new ProcessMap(path+"/"+vid+"/active", me, this);
 			future = new ProcessList(path+"/"+(vid+1), this);
-			entering.create(-1);
-				
+
+			blocked.create(Integer.MAX_VALUE);
+			
 			state=State.BLOCKED;
 				
 			logger.info("joining group");
@@ -292,7 +294,7 @@ public class Endpoint {
 		}
 
 		if (values.size()>0)
-			logger.info("delivering "+values.size()+" messages");
+			logger.debug("delivering "+values.size()+" messages");
 
 		for(byte[] value: values)
 			recv.receive(value);
@@ -405,9 +407,9 @@ public class Endpoint {
 					awake=false;
 				}
 				
-				// The following order shouldn't matter for correctness
-				deliver();
+				// Currently this order matters for correctness!
 				block();
+				deliver();
 				install();
 			}
 		} catch(Exception e) {
