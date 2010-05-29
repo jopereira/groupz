@@ -136,6 +136,10 @@ public class Endpoint {
 
 		synchronized (this) {
 			if (!readyToInstall()) return;
+			
+			// Garbage collect and verify view-synchrony
+			if (messages!=null && !messages.receiveAndGC(getLastStableMessage()).isEmpty())
+				throw new GroupException("there is a bug somewhere", null);
 
 			List<String> prop=new ArrayList<String>();
 			// Respect order in previous view
