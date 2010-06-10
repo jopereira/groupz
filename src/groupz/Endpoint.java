@@ -40,13 +40,13 @@ public class Endpoint {
 	private String me;
 
 	private int vid;
-	private ProcessMap active;
-	private ProcessMap blocked, oldblocked;
-	private ProcessList members, future;
+	private Acknowledgments active;
+	private Acknowledgments blocked, oldblocked;
+	private View current, next;
 	
 	private Messages messages;
 	private boolean awake;
-	private Application recv;
+	private Application app;
 	
 	private enum State { CONNECTED, JOINED, BLOCKING, BLOCKED, DISCONNECTED };
 	private State state;
@@ -63,7 +63,7 @@ public class Endpoint {
 		try {
 			this.zk=new ZooKeeper("localhost", 3000, null);
 			this.path=root+"/group/"+gid;
-			this.recv=cb;
+			this.app=cb;
 			this.state=State.CONNECTED;
 			logger.info("created endpoint on group "+gid);
 		} catch(Exception e) {
@@ -78,7 +78,7 @@ public class Endpoint {
 	// Pre-condition for start changing a view
 	private boolean readyToBlock() throws KeeperException, InterruptedException {
 		return state==State.JOINED && oldblocked.processSet().isEmpty() &&
-			(active.processSet().size()<members.processes().size() || !blocked.processSet().isEmpty());
+			(active.processSet().size()<current.getProcesses().size() || !blocked.processSet().isEmpty());
 	}
 		
 	// Output action to start changing a view
@@ -92,7 +92,7 @@ public class Endpoint {
 		}
 		
 		// Callback out of synchronized!
-		recv.block();
+		app.block();
 	}
 	
 	/**
@@ -110,7 +110,7 @@ public class Endpoint {
 			blocked.create(messages.getLastReceived());
 			active.remove();
 				
-			future = new ProcessList(path+"/"+(vid+1), this);
+			next = new View(path+"/"+(vid+1), this);
 
 			logger.info("blocked on view "+vid);
 		} catch(KeeperException e) {
@@ -143,26 +143,26 @@ public class Endpoint {
 
 			List<String> prop=new ArrayList<String>();
 			// Respect order in previous view
-			for(String s: members.processes())
+			for(String s: current.getProcesses())
 				if (blocked.processSet().contains(s))
 					prop.add(s);
 			// Arriving processes in any order
 			for(String s: blocked.processSet())
-				if (!members.processes().contains(s))
+				if (!current.getProcesses().contains(s))
 					prop.add(s);
 			
-			future.propose(prop);		
+			next.propose(prop);		
 			
 			vid ++;
 
 			oldblocked=blocked;
 
-			active = new ProcessMap(path+"/"+vid+"/active", me, this);
-			blocked = new ProcessMap(path+"/"+vid+"/blocked", me, this);
+			active = new Acknowledgments(path+"/"+vid+"/active", me, this);
+			blocked = new Acknowledgments(path+"/"+vid+"/blocked", me, this);
 			
-			if (future.processes().contains(me)) {
-				members = future;
-				future = null;
+			if (next.getProcesses().contains(me)) {
+				current = next;
+				next = null;
 				messages = new Messages(path+"/"+vid, me, this);
 				active.create(-1);
 				state = State.JOINED;
@@ -178,7 +178,7 @@ public class Endpoint {
 		}
 		
 		// Call install out of synchronized
-		recv.install(vid, names);
+		app.install(vid, names);
 	}
 		
 	/* -- Joining and leaving a group */
@@ -240,10 +240,10 @@ public class Endpoint {
 			
 			findPid();
 
-			members = new ProcessList(path+"/"+vid, this);
-			blocked = new ProcessMap(path+"/"+vid+"/blocked", me, this);
-			active = new ProcessMap(path+"/"+vid+"/active", me, this);
-			future = new ProcessList(path+"/"+(vid+1), this);
+			current = new View(path+"/"+vid, this);
+			blocked = new Acknowledgments(path+"/"+vid+"/blocked", me, this);
+			active = new Acknowledgments(path+"/"+vid+"/active", me, this);
+			next = new View(path+"/"+(vid+1), this);
 
 			blocked.create(Integer.MAX_VALUE);
 			
@@ -301,10 +301,10 @@ public class Endpoint {
 			logger.debug("delivering "+values.size()+" messages");
 
 		for(byte[] value: values)
-			recv.receive(value);
+			app.receive(value);
 		
 		synchronized (this) {
-			if (future==null)
+			if (next==null)
 				active.set(messages.getLastReceived());
 			else
 				blocked.set(messages.getLastReceived());
@@ -352,7 +352,7 @@ public class Endpoint {
 	public synchronized String[] getCurrentView() throws GroupException {
 		onEntry(State.JOINED, State.BLOCKING, State.BLOCKED);
 		try {
-			return members.processes().toArray(new String[members.processes().size()]);
+			return current.getProcesses().toArray(new String[current.getProcesses().size()]);
 		} catch(Exception e) {
 			onExit(e);
 			return null; // never happens, onExit always throws

@@ -25,17 +25,17 @@ import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs.Ids;
 
-class ProcessList implements Watcher {
-	private Endpoint view;
+class View implements Watcher {
+	private Endpoint ep;
 	private String path;
 	
 	private List<String> data;
 	
-	public ProcessList(String path, Endpoint view) throws KeeperException, InterruptedException {
-		this.view=view;
+	public View(String path, Endpoint ep) throws KeeperException, InterruptedException {
+		this.ep=ep;
 		this.path=path;
 		
-		if (view.zk.exists(path, this)!=null)
+		if (ep.zk.exists(path, this)!=null)
 			update();
 	}
 
@@ -47,7 +47,7 @@ class ProcessList implements Watcher {
 			else
 				value+=","+v;
 		try {
-			view.zk.create(path, value.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+			ep.zk.create(path, value.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 		} catch (KeeperException.NodeExistsException e) {
 			// not mine...
 		}
@@ -57,7 +57,7 @@ class ProcessList implements Watcher {
 	private void update() throws KeeperException, InterruptedException {
 		synchronized (this) {
 			try {
-				byte[] value=view.zk.getData(path, this, null);
+				byte[] value=ep.zk.getData(path, this, null);
 				String[] procs = new String(value).split(",");
 				data = Arrays.asList(procs);
 			} catch (KeeperException.NoNodeException e) {
@@ -66,13 +66,13 @@ class ProcessList implements Watcher {
 		}
 	}
 	
-	public synchronized List<String> processes() throws KeeperException, InterruptedException {
+	public synchronized List<String> getProcesses() throws KeeperException, InterruptedException {
 		if (data==null)
 			update();
 		return data;
 	}
 	
-	public synchronized boolean isKnown() throws KeeperException, InterruptedException {
+	public synchronized boolean isDecided() throws KeeperException, InterruptedException {
 		if (data==null)
 			update();
 		return data!=null;
@@ -80,7 +80,7 @@ class ProcessList implements Watcher {
 
 	@Override
 	public void process(WatchedEvent event) {
-		view.wakeup();
+		ep.wakeup();
 	}
 
 	public String toString() {

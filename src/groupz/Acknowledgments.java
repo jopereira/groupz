@@ -26,20 +26,20 @@ import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs.Ids;
 
-class ProcessMap implements Watcher {
-	protected Endpoint view;
+class Acknowledgments implements Watcher {
+	protected Endpoint ep;
 	private String path;
 	
 	private Map<String,Integer> data;
 	private String me;
 
-	public ProcessMap(String path, String me, Endpoint view) throws KeeperException, InterruptedException {
-		this.view=view;
+	public Acknowledgments(String path, String me, Endpoint ep) throws KeeperException, InterruptedException {
+		this.ep=ep;
 		this.path=path;
 		this.me=me;
 
 		try {
-			view.zk.create(path, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+			ep.zk.create(path, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 		} catch(KeeperException.NodeExistsException e) {
 			// don't care
 		}
@@ -48,14 +48,14 @@ class ProcessMap implements Watcher {
 
 	@Override
 	public void process(WatchedEvent event) {
-		view.wakeup();
+		ep.wakeup();
 	}
 	
 	private synchronized void update() throws KeeperException, InterruptedException {
 		Map<String,Integer> newdata=new HashMap<String, Integer>();
-		for(String child: view.zk.getChildren(path, this)) {
+		for(String child: ep.zk.getChildren(path, this)) {
 			try {
-				byte[] value=view.zk.getData(path+"/"+child, this, null);
+				byte[] value=ep.zk.getData(path+"/"+child, this, null);
 				newdata.put(child, Integer.parseInt(new String(value)));
 			} catch (KeeperException.NoNodeException e) {
 				// Ignore this one...
@@ -66,19 +66,19 @@ class ProcessMap implements Watcher {
 	}
 	
 	public synchronized void create(int value) throws KeeperException, InterruptedException {
-		view.zk.create(path+"/"+me, Integer.toString(value).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+		ep.zk.create(path+"/"+me, Integer.toString(value).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
 	}
 	
 	public synchronized void set(int value) throws KeeperException, InterruptedException {
 		update();
 		if (value<=data.get(me))
 			return;
-		view.zk.setData(path+"/"+me, Integer.toString(value).getBytes(), -1);		
+		ep.zk.setData(path+"/"+me, Integer.toString(value).getBytes(), -1);		
 	}
 
 	public synchronized void remove() throws InterruptedException, KeeperException {
 		try {
-			view.zk.delete(path+"/"+me, -1);
+			ep.zk.delete(path+"/"+me, -1);
 		} catch(KeeperException.NoNodeException e) {
 			// don't care
 		}

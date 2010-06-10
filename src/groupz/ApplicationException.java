@@ -17,4 +17,6 @@ public class ApplicationException extends GroupException {
 	public ApplicationException(Throwable cause) {
 		super("unrecoverable application exception", cause);
 	}
+
+	private static final long serialVersionUID = 1L;
 }

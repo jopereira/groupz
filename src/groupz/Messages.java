@@ -28,14 +28,14 @@ import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs.Ids;
 
 class Messages implements Watcher {
-	private Endpoint view;
+	private Endpoint ep;
 	private String path;
 	
 	private int lastSent=-1, lastRecv=-1, lastStable=-1;
 	private List<byte[]> data=new ArrayList<byte[]>();
 	
-	public Messages(String path, String me, Endpoint view) throws KeeperException, InterruptedException {
-		this.view=view;
+	public Messages(String path, String me, Endpoint ep) throws KeeperException, InterruptedException {
+		this.ep=ep;
 		this.path=path+"/messages";
 
 		create();
@@ -43,7 +43,7 @@ class Messages implements Watcher {
 
 	private void create() throws KeeperException, InterruptedException {
 		try {
-			view.zk.create(path, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+			ep.zk.create(path, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 		} catch (KeeperException.NodeExistsException e) {
 			// already done
 		}
@@ -51,7 +51,7 @@ class Messages implements Watcher {
 
 	@Override
 	public void process(WatchedEvent event) {
-		view.wakeup();
+		ep.wakeup();
 	}
 
 	public synchronized List<byte[]> receiveAndGC(int low) throws NumberFormatException, KeeperException, InterruptedException {
@@ -65,16 +65,16 @@ class Messages implements Watcher {
 	
 	private void update() throws KeeperException, InterruptedException {
 		SortedSet<String> childs=new TreeSet<String>();
-		childs.addAll(view.zk.getChildren(path, this));
+		childs.addAll(ep.zk.getChildren(path, this));
 		for(String child: childs) {
 			int id=Integer.parseInt(child);
 			if (id>lastSent) {
-				byte[] value=view.zk.getData(path+"/"+child, null, null);
+				byte[] value=ep.zk.getData(path+"/"+child, null, null);
 				data.add(value);
 				lastSent=id;
 			} else if (id<=lastStable){
 				try {
-					view.zk.delete(path+"/"+child, -1);
+					ep.zk.delete(path+"/"+child, -1);
 				} catch(KeeperException.NoNodeException e) {
 					// someone got there first...
 				}
@@ -83,7 +83,7 @@ class Messages implements Watcher {
 	}
 	
 	public void send(byte[] data) throws KeeperException, InterruptedException {
-		view.zk.create(path+"/", data, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+		ep.zk.create(path+"/", data, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
 	}
 	
 	public synchronized int getLastReceived() throws KeeperException, InterruptedException {
